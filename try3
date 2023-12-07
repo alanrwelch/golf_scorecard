@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html>
+<title>
+    ⛳️🏌️‍♂️📝
+</title>
+
+<body>
+    <h1>
+        <b> Springfield Senior League </b>
+    </h1>
+    <h2>
+        <div id="course"></div>
+    </h2>
+
+    <input id="date" type="date">
+    <div>
+        <div style="display: inline-block"> <b>Tee Time </b></div>
+        <input style="display: inline-block; width: 60px;" id="team" type="string" maxlength=6 placeholder="Tee Time">
+        <div style="display: inline-block"> <b>Team Target</b></div>
+        <div style="display: inline-block" id="team_target"></div>
+    </div>
+
+    <div id="table"></div>
+    <button onclick="submit()">Submit</button>
+    <button onclick="clearScoresAndCache()">Clear</button>
+</body>
+<script>
+    const scorecard_config = {
+        pars: [4, 4, 5, 3, 4, 5, 4, 3, 4, 4, 4, 5, 3, 4, 4, 3, 4, 5],
+        numPlayers: 4,
+        results: [{
+            name: "TOTAL",
+            startInclusive: 0,
+            endExclusive: 18,
+        }, {
+            name: "OUT",
+            startInclusive: 0,
+            endExclusive: 9
+        }, {
+            name: "IN",
+            startInclusive: 9,
+            endExclusive: 18
+        }],
+        courseName: "Springfield Course"
+    };
+
+    const TEST_CONFIG = { 
+        "courseConfig": { 
+            "date": "2000-01-01", 
+            "courseName": "Test Course", 
+            "pars": [4, 4, 5, 3, 4, 5, 4, 3, 4, 4, 4, 5, 3, 4, 4, 3, 4, 5] 
+        }, 
+        "allTeamConfigs": [
+            { 
+                "teamName": "9:20", 
+                "players": [
+                    { "playerName": "AAAA AAAAAAA", "playerTarget": 24 }, 
+                    { "playerName": "BBBBB BBBBBB", "playerTarget": 21 }, 
+                    { "playerName": "CCC CCCCCC", "playerTarget": 15 }
+                ]
+            },
+            { 
+                "teamName": "9:30", 
+                "players": [
+                    { "playerName": "DDDDD DDDD", "playerTarget": 29 },
+                    { "playerName": "EEEE EEEEEEEEE", "playerTarget": 25 }, 
+                    { "playerName": "FFFFF FFFFFF", "playerTarget": 21 }, 
+                    { "playerName": "GGG GGGGG", "playerTarget": 15 }] 
+                }
+        ]
+    }
+
+    function spreadsheetConfig() {
+        // This function exists to making testing iteration more straightforward.
+        // AppScript will inject the variable CONFIG *before* the HTML content.
+        if (typeof CONFIG === "undefined") {
+            console.log("Falling back to TEST_CONFIG.");
+            return TEST_CONFIG;
+        }
+        console.log("Loaded config:\n" + JSON.stringify(CONFIG));
+        return CONFIG;
+    }
+
+    createScorecard(scorecard_config, spreadsheetConfig());
+
+    function createScorecard(scorecard_config, spreadsheetConfig) {
+        document.getElementById("course").textContent = spreadsheetConfig.courseConfig.courseName;
+        document.getElementById("table").appendChild(generateTable(scorecard_config));
+
+        for (const result of scorecard_config.results) {
+            const refRow = document.getElementById(idHoleRow(result.endExclusive - 1));
+            const refTable = refRow.parentElement;
+
+            const newRows = generateResultTable(result, scorecard_config);
+
+            // Loop over these rows in reverse, so they appear in order.
+            for (let rowIndex = newRows.length - 1; rowIndex >= 0; rowIndex--) {
+                const placeholderRow = refTable.insertRow(refRow.rowIndex + 1);
+                refTable.replaceChild(newRows[rowIndex], placeholderRow);
+            }
+        }
+
+        // We could have loaded some cached scores.
+        updateAllStats(scorecard_config.results, scorecard_config.pars, scorecard_config.numPlayers);
+    }
+
+    function generateTable(scorecard_config) {
+        const table = document.createElement("table");
+
+        const numHoles = scorecard_config.pars.length;
+
+        const nameRow = generateNameRow(scorecard_config.numPlayers);
+        table.appendChild(nameRow);
+
+        const targetRow = generateTargetRow(scorecard_config.results, scorecard_config.pars, scorecard_config.numPlayers);
+        table.appendChild(targetRow);
+
+        for (let holeIndex = 0; holeIndex < numHoles; holeIndex++) {
+            const row = generateHoleRow(scorecard_config.results, scorecard_config.pars, holeIndex, scorecard_config.numPlayers);
+            table.appendChild(row);
+        }
+
+        return table;
+    }
+
+    function generateNameRow(numPlayers) {
+        const row = document.createElement("tr");
+
+        const headerCell = document.createElement("td");
+        headerCell.textContent = "Name";
+        row.appendChild(headerCell);
+
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            const playerCell = document.createElement("td");
+
+            const input = document.createElement("input");
+            input.type = "string";
+            input.style = "display: inline-block; width: 60px;"
+            input.id = idPlayerName(playerIndex);
+            input.placeholder = "Name";
+
+            playerCell.appendChild(input);
+
+            row.appendChild(playerCell);
+        }
+
+        return row;
+    }
+
+    function generateTargetRow(results, pars, numPlayers) {
+        const row = document.createElement("tr");
+
+        const headerCell = document.createElement("td");
+        headerCell.textContent = "Target";
+        row.appendChild(headerCell);
+
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            const currPlayerIndex = playerIndex;
+
+            const playerCell = document.createElement("td");
+
+            const input = document.createElement("input");
+            input.type = "number";
+            input.style = "display: inline-block; width: 40px;"
+            input.id = idTarget(playerIndex);
+            input.placeholder = "Pts";
+            input.min = 0;
+            input.onchange = function (event) {
+                updateStats(results, pars, numPlayers, currPlayerIndex);
+                updateTeamTarget(numPlayers);
+            };
+
+            playerCell.appendChild(input);
+
+            row.appendChild(playerCell);
+        }
+
+        return row;
+    }
+
+    function generateHoleRow(results, pars, holeIndex, numPlayers) {
+        const row = document.createElement("tr");
+
+        row.id = idHoleRow(holeIndex);
+
+        const headerCell = generateHoleHeader(holeIndex, pars[holeIndex]);
+        row.appendChild(headerCell);
+
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            const holeCell = generateHoleForPlayer(results, pars, holeIndex, numPlayers, playerIndex);
+            row.appendChild(holeCell);
+        }
+
+        return row;
+    }
+
+    function generateHoleHeader(holeIndex, par) {
+        const cell = document.createElement("td");
+        cell.textContent = (holeIndex + 1) + " (" + par + ")";
+
+        return cell;
+    }
+
+    function generateHoleForPlayer(results, pars, holeIndex, numPlayers, playerIndex) {
+        const cell = document.createElement("td");
+
+        const input = document.createElement("input");
+        input.type = "number";
+        const id = idHolePlayer(holeIndex, playerIndex);
+        input.id = id;
+        
+        const possibleSavedScore = localStorage.getItem(id);
+        if (possibleSavedScore != null) {
+            input.value = possibleSavedScore;
+        } else {
+            input.placeholder = 0;               // Don't set value so unset fields are treated as empty
+        }
+
+        input.min = Math.max(pars[holeIndex] - 2, 1);    // At best an Eagle (or hole in 1)
+        input.max = pars[holeIndex] + 2;                 // At worst, a double-bogey
+        input.onchange = function (event) { 
+            localStorage.setItem(id, event.target.value)
+            updateStats(results, pars, numPlayers, playerIndex); };
+
+        cell.appendChild(input);
+
+        return cell;
+    }
+
+    function generateResultTable(partialResult, scorecard_config) {
+        const row = document.createElement("tr");
+        row.textContent = partialResult.name;
+
+        const scoreRow = generateResultScoreRow(partialResult.name, scorecard_config.numPlayers);
+        const pointsRow = generateResultPointsRow(partialResult.name, scorecard_config.numPlayers);
+        const netRow = generateResultNetRow(partialResult.name, scorecard_config.numPlayers);
+        const pointsTeamRow = generateResultPointsTeamRow(partialResult.name);
+        const netTeamRow = generateResultNetTeamRow(partialResult.name);
+
+        return [row, scoreRow, pointsRow, netRow, pointsTeamRow, netTeamRow];
+    }
+
+    function generateResultScoreRow(resultName, numPlayers) {
+        const row = document.createElement("tr");
+
+        const headerCell = document.createElement("td");
+        headerCell.textContent = "Score";
+        row.appendChild(headerCell);
+
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            const scoreCell = document.createElement("td");
+
+            scoreCell.id = idResultScorePlayer(resultName, playerIndex);
+            scoreCell.textContent = 0;
+            row.appendChild(scoreCell);
+        }
+
+        return row;
+    }
+
+    function generateResultPointsRow(resultName, numPlayers) {
+        const row = document.createElement("tr");
+
+        const headerCell = document.createElement("td");
+        headerCell.textContent = "Points";
+        row.appendChild(headerCell);
+
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            const pointsCell = document.createElement("td");
+
+            pointsCell.id = idResultPointsPlayer(resultName, playerIndex);
+            pointsCell.textContent = 0;
+            row.appendChild(pointsCell);
+        }
+
+        return row;
+    }
+
+    function generateResultNetRow(resultName, numPlayers) {
+        const row = document.createElement("tr");
+
+        const headerCell = document.createElement("td");
+        headerCell.textContent = "Net";
+        row.appendChild(headerCell);
+
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            const netCell = document.createElement("td");
+
+            netCell.id = idResultNetPlayer(resultName, playerIndex);
+            netCell.textContent = "";
+            row.appendChild(netCell);
+        }
+
+        return row;
+    }
+
+    function generateResultPointsTeamRow(resultName) {
+        const row = document.createElement("tr");
+
+        const headerCell = document.createElement("td");
+        headerCell.textContent = "Team Points";
+        row.appendChild(headerCell);
+
+        const pointsCell = document.createElement("td");
+
+        pointsCell.id = idResultPointsTeam(resultName);
+        pointsCell.textContent = 0;
+        row.appendChild(pointsCell);
+
+        return row;
+    }
+
+    function generateResultNetTeamRow(resultName) {
+        const row = document.createElement("tr");
+
+        const headerCell = document.createElement("td");
+        headerCell.textContent = "Team Net";
+        row.appendChild(headerCell);
+
+        const netCell = document.createElement("td");
+
+        netCell.id = idResultNetTeam(resultName);
+        netCell.textContent = "";
+        row.appendChild(netCell);
+
+        return row;
+    }
+
+    function updateAllStats(results, pars, numPlayers) {
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            updateStats(results, pars, numPlayers, playerIndex);
+        }
+    }
+
+    function updateStats(results, pars, numPlayers, playerIndex) {
+        const score = computeScore(pars.length, playerIndex);
+        const points = computePoints(pars, playerIndex);
+
+        for (let result of results) {
+            updateResult(result, pars, playerIndex, score, points, pars);
+
+            let pointsTeam = 0;
+            for (let currPlayerIndex = 0; currPlayerIndex < numPlayers; currPlayerIndex++) {
+                const playerPointsOrNaN = parseInt(document.getElementById(idResultPointsPlayer(result.name, currPlayerIndex)).textContent);
+                if (isNaN(playerPointsOrNaN)) {
+                    continue;
+                }
+                pointsTeam += playerPointsOrNaN;
+            }
+            document.getElementById(idResultPointsTeam(result.name)).textContent = pointsTeam;
+
+            // Nets can be fractions
+            let netTeam = 0;
+            for (let currPlayerIndex = 0; currPlayerIndex < numPlayers; currPlayerIndex++) {
+                const playerNetOrNaN = parseFloat(document.getElementById(idResultNetPlayer(result.name, currPlayerIndex)).textContent);
+                if (isNaN(playerNetOrNaN)) {
+                    continue;
+                }
+                netTeam += playerNetOrNaN;
+            }
+            document.getElementById(idResultNetTeam(result.name)).textContent = netTeam;
+        }
+    }
+
+    function updateResult(result, pars, playerIndex, score, points) {
+        const holeIndices = Array.from({ length: result.endExclusive - result.startInclusive }, (_, i) => result.startInclusive + i);
+
+        const resultScore = sumNumbersByIndex(score.scores, holeIndices);
+        document.getElementById(idResultScorePlayer(result.name, playerIndex)).textContent = resultScore;
+
+        const resultPoints = sumNumbersByIndex(points.points, holeIndices);
+        document.getElementById(idResultPointsPlayer(result.name, playerIndex)).textContent = resultPoints;
+
+        const resultNet = computeNet(points, pars, holeIndices, playerIndex);
+        document.getElementById(idResultNetPlayer(result.name, playerIndex)).textContent = resultNet;
+    }
+
+    function computeScore(numHoles, playerIndex) {
+        let scores = [];
+        let total = 0;
+        for (let holeIndex = 0; holeIndex < numHoles; holeIndex++) {
+            const rawScore = document.getElementById(idHolePlayer(holeIndex, playerIndex)).value;
+            scores.push(rawScore);
+
+            const score = parseInt(rawScore);
+            if (isNaN(score)) {
+                continue;
+            }
+            total += score;
+        }
+        return { "overall_score": total, "scores": scores };
+    }
+
+    function computePoints(pars, playerIndex) {
+        let scoresOrNaN = [];
+        for (let holeIndex = 0; holeIndex < pars.length; holeIndex++) {
+            scoresOrNaN.push(parseInt(document.getElementById(idHolePlayer(holeIndex, playerIndex)).value));
+        }
+
+        // We need to compute points iff the user has entered a value for the corresponding hole.
+
+        let points = [];
+        let total = 0;
+        for (let holeIndex = 0; holeIndex < pars.length; holeIndex++) {
+            if (isNaN(scoresOrNaN[holeIndex])) {
+                points.push("");
+                continue;
+            }
+
+            const point = 2 - (scoresOrNaN[holeIndex] - pars[holeIndex]);
+            points.push(point);
+            total += point;
+        }
+        return { "overall_points": total, "points": points };
+    }
+
+    function computeNet(points, pars, holeIndices, playerIndex) {
+        const targetOrNaN = parseInt(document.getElementById(idTarget(playerIndex)).value);
+
+        if (isNaN(targetOrNaN)) {
+            return "";
+        }
+
+        // Weighted just by number of holes.
+        // Points are already independent of par.
+        const resultTarget = targetOrNaN * (holeIndices.length / pars.length);
+
+        const resultPoints = sumNumbersByIndex(points.points, holeIndices);
+
+        return resultPoints - resultTarget;
+    }
+
+    function sumNumbersByIndex(numbersOrNaN, indices) {
+        let out = 0;
+        for (let index of indices) {
+            const numOrNaN = parseInt(numbersOrNaN[index]);
+            if (isNaN(numOrNaN)) {
+                continue;
+            }
+            out += numOrNaN;
+        }
+        return out;
+    }
+
+    function updateTeamTarget(numPlayers) {
+        let total = 0;
+        for (let playerIndex = 0; playerIndex < numPlayers; playerIndex++) {
+            const possibleTarget = parseInt(document.getElementById(idTarget(playerIndex)).value);
+            if (isNaN(possibleTarget)) {
+                continue;
+            }
+            total += possibleTarget;
+        }
+
+        document.getElementById("team_target").textContent = total;
+    }
+
+    function submit() {
+        let flatResults = [];
+
+        for (let playerIndex = 0; playerIndex < scorecard_config.numPlayers; playerIndex++) {
+            // Skip players that dont have a name.
+            const rawName = document.getElementById(idPlayerName(playerIndex)).value;
+            if (rawName === "" || rawName === null) {
+                continue;
+            }
+
+            let playerStats = [
+                document.getElementById("date").value,
+                document.getElementById("team").value,
+                scorecard_config.courseName,
+                document.getElementById(idPlayerName(playerIndex)).value
+            ];
+
+            for (let holeIndex = 0; holeIndex < scorecard_config.pars.length; holeIndex++) {
+                playerStats.push(document.getElementById(idHolePlayer(holeIndex, playerIndex)).value)
+            }
+
+            flatResults.push(playerStats);
+        }
+
+        clearScoresAndCache();
+
+        console.log("Submitting:\n" + JSON.stringify(flatResults));
+        // This will fail when run not in AppScript
+        // But its the Web! So it doesn't really matter.
+        google.script.run.saveData(flatResults);
+    }
+
+    function clearScoresAndCache() {        
+        const numHoles = spreadsheetConfig().courseConfig.pars.length;
+        // For now we hardcode that at most 6 players per team.
+        for (let playerIndex = 0; playerIndex < 6; playerIndex++) {
+            for (let holeIndex = 0; holeIndex < numHoles; holeIndex++) {
+                const possibleInput = document.getElementById(idHolePlayer(holeIndex, playerIndex));
+                if (possibleInput == null) {
+                    break;
+                }
+                possibleInput.value = null;
+                possibleInput.placeholder = 0;
+            }
+        }
+
+        localStorage.clear();
+
+        // Basically just resets everything to 0.
+        updateAllStats(scorecard_config.results, scorecard_config.pars, scorecard_config.numPlayers);
+    }
+
+    function idHoleRow(holeIndex) {
+        return "holeRow_" + holeIndex;
+    }
+
+    function idHolePlayer(holeIndex, playerIndex) {
+        return holeIndex + "_" + playerIndex;
+    }
+
+    function idResultScorePlayer(resultName, playerIndex) {
+        return "result_" + resultName + "_score_" + playerIndex;
+    }
+
+    function idResultPointsPlayer(resultName, playerIndex) {
+        return "result_" + resultName + "_points_" + playerIndex;
+    }
+
+    function idResultPointsTeam(resultName) {
+        return "result_" + resultName + "_points_team";
+    }
+
+    function idPlayerName(playerIndex) {
+        return "name_" + playerIndex;
+    }
+
+    function idTarget(playerIndex) {
+        return "target_" + playerIndex;
+    }
+
+    function idResultNetPlayer(resultName, playerIndex) {
+        return "result_" + resultName + "_net_" + playerIndex;
+    }
+
+    function idResultNetTeam(resultName) {
+        return "result_" + resultName + "_net_team";
+    }
+</script>
+
+</html>
