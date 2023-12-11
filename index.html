@@ -144,6 +144,7 @@
             const input = document.createElement("input");
             input.type = "string";
             input.id = idPlayerName(playerIndex);
+            input.style = "width: 70px";
             input.placeholder = "Name";
 
             playerCell.appendChild(input);
@@ -169,6 +170,7 @@
             const input = document.createElement("input");
             input.type = "number";
             input.id = idTarget(playerIndex);
+            input.style = "width: 40px";
             input.placeholder = "Target";
             input.min = 0;
             input.onchange = function (event) {
@@ -214,6 +216,7 @@
         input.type = "number";
         const id = idHolePlayer(holeIndex, playerIndex);
         input.id = id;
+        input.style = "width: 30px";
 
         const possibleSavedScore = localStorage.getItem(id);
         if (possibleSavedScore != null) {
