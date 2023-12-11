@@ -12,13 +12,21 @@
         <div id="course"></div>
     </h2>
 
-    <input id="date" type="date">
-    <div>
-        <div style="display: inline-block">Team Name</div>
-        <input style="display: inline-block" id="team" type="string" placeholder="Team">
-        <div style="display: inline-block">Team Target</div>
-        <div style="display: inline-block" id="team_target"></div>
-    </div>
+    <div id="all_input">
+        <div>
+            <div style="display: inline-block"><b style="color: blue">Date</b></div>
+            <div style="display: inline-block" id="date"></div>
+        </div>
+
+        <div>
+            <div style="display: inline-block"><b style="color: blue">Team</b></div>
+            <input style="display: inline-block; width: 10ch" id="team" type="text" list="teamDatalist"
+                placeholder="Tee Time">
+            <div id="team_options"></div>
+            <div style="display: inline-block"><b>Team Target Points</b></div>
+            <div style="display: inline-block" id="team_target"></div>
+        </div>
+
 
     <div id="table"></div>
     <button onclick="submit()">Submit</button>
